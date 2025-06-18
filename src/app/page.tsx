@@ -19,6 +19,8 @@ export default function Home() {
   const [input, setInput] = useState("");
   const [allProducts, setAllProducts] = useState<Product[]>([]); // Store all products from API
   const [visibleProducts, setVisibleProducts] = useState<Product[]>([]); // Only 2 products to display
+  const [dismissedIds, setDismissedIds] = useState<Set<number>>(new Set()); // Products user dismissed
+  const [nextIndex, setNextIndex] = useState(2); // Index of next product to show
   const [cart, setCart] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -51,6 +53,8 @@ export default function Home() {
         const products = data.products || [];
         setAllProducts(products);
         setVisibleProducts(products.slice(0, 2)); // Show first 2 products
+        setDismissedIds(new Set()); // Reset dismissed products for new search
+        setNextIndex(2); // Reset next index to 2 (after first 2 products)
       } else {
         console.error('API Error:', data.error);
         // Fallback to mock data on error
@@ -64,6 +68,8 @@ export default function Home() {
         ];
         setAllProducts(fallbackProducts);
         setVisibleProducts(fallbackProducts);
+        setDismissedIds(new Set());
+        setNextIndex(1);
       }
     } catch (error) {
       console.error('Fetch error:', error);
@@ -78,6 +84,8 @@ export default function Home() {
       ];
       setAllProducts(fallbackProducts);
       setVisibleProducts(fallbackProducts);
+      setDismissedIds(new Set());
+      setNextIndex(1);
     } finally {
       setLoading(false);
       setInput("");
@@ -89,16 +97,28 @@ export default function Home() {
   };
 
   const removeProduct = (productId: number) => {
+    // Add to dismissed products (never show again)
+    const newDismissedIds = new Set(dismissedIds);
+    newDismissedIds.add(productId);
+    setDismissedIds(newDismissedIds);
+    
     // Remove the product from visible products
     const updatedVisible = visibleProducts.filter(p => p.id !== productId);
     
-    // Find unused products from allProducts that are not currently visible
-    const currentVisibleIds = updatedVisible.map(p => p.id);
-    const unusedProducts = allProducts.filter(p => !currentVisibleIds.includes(p.id) && p.id !== productId);
-    
-    // Add the next unused product if available and we have less than 2 visible
-    if (updatedVisible.length < 2 && unusedProducts.length > 0) {
-      updatedVisible.push(unusedProducts[0]);
+    // Get the next product sequentially from allProducts
+    // Keep looking until we find one that hasn't been dismissed and isn't currently visible
+    let currentIndex = nextIndex;
+    while (currentIndex < allProducts.length) {
+      const nextProduct = allProducts[currentIndex];
+      const currentVisibleIds = updatedVisible.map(p => p.id);
+      
+      // If product hasn't been dismissed and isn't currently visible, use it
+      if (!newDismissedIds.has(nextProduct.id) && !currentVisibleIds.includes(nextProduct.id)) {
+        updatedVisible.push(nextProduct);
+        setNextIndex(currentIndex + 1);
+        break;
+      }
+      currentIndex++;
     }
     
     setVisibleProducts(updatedVisible);
