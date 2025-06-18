@@ -40,8 +40,8 @@ export async function POST(request: NextRequest) {
       console.log('First item structure:', JSON.stringify(response.data.search_results[0], null, 2));
     }
     
-    // Transform the response to match our Product interface - limit to first 2 products
-    const products = response.data.search_results?.slice(0, 2).map((item: any, index: number) => {
+    // Transform the response to match our Product interface - get first 6 products (2 visible + 4 backup)
+    const products = response.data.search_results?.slice(0, 6).map((item: any, index: number) => {
       console.log(`Item ${index + 1}:`, {
         title: item.title,
         asin: item.asin,

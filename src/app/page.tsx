@@ -17,7 +17,8 @@ interface Product {
 
 export default function Home() {
   const [input, setInput] = useState("");
-  const [products, setProducts] = useState<Product[]>([]);
+  const [allProducts, setAllProducts] = useState<Product[]>([]); // Store all products from API
+  const [visibleProducts, setVisibleProducts] = useState<Product[]>([]); // Only 2 products to display
   const [cart, setCart] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
 
@@ -47,30 +48,36 @@ export default function Home() {
       const data = await response.json();
       
       if (response.ok) {
-        setProducts(data.products || []);
+        const products = data.products || [];
+        setAllProducts(products);
+        setVisibleProducts(products.slice(0, 2)); // Show first 2 products
       } else {
         console.error('API Error:', data.error);
         // Fallback to mock data on error
-        setProducts([
+        const fallbackProducts = [
           {
             id: 1,
             name: "Sample Product 1",
             price: 19.99,
             imageUrl: "https://images.unsplash.com/photo-1513708927688-890a1e2b6b94?auto=format&fit=crop&w=400&q=80",
           }
-        ]);
+        ];
+        setAllProducts(fallbackProducts);
+        setVisibleProducts(fallbackProducts);
       }
     } catch (error) {
       console.error('Fetch error:', error);
       // Fallback to mock data on error
-      setProducts([
+      const fallbackProducts = [
         {
           id: 1,
           name: "Sample Product 1",
           price: 19.99,
           imageUrl: "https://images.unsplash.com/photo-1513708927688-890a1e2b6b94?auto=format&fit=crop&w=400&q=80",
         }
-      ]);
+      ];
+      setAllProducts(fallbackProducts);
+      setVisibleProducts(fallbackProducts);
     } finally {
       setLoading(false);
       setInput("");
@@ -79,6 +86,22 @@ export default function Home() {
 
   const addToCart = (product: Product) => {
     setCart([...cart, product]);
+  };
+
+  const removeProduct = (productId: number) => {
+    // Remove the product from visible products
+    const updatedVisible = visibleProducts.filter(p => p.id !== productId);
+    
+    // Find unused products from allProducts that are not currently visible
+    const currentVisibleIds = updatedVisible.map(p => p.id);
+    const unusedProducts = allProducts.filter(p => !currentVisibleIds.includes(p.id) && p.id !== productId);
+    
+    // Add the next unused product if available and we have less than 2 visible
+    if (updatedVisible.length < 2 && unusedProducts.length > 0) {
+      updatedVisible.push(unusedProducts[0]);
+    }
+    
+    setVisibleProducts(updatedVisible);
   };
 
   return (
@@ -104,12 +127,21 @@ export default function Home() {
           )}
           
           {/* Products above chat */}
-          {products.length > 0 && !loading && (
+          {visibleProducts.length > 0 && !loading && (
             <div>
               <h2 className="font-bold text-lg mb-4 text-white/90">Amazon Products</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
-                {products.map(product => (
-                  <div key={product.id} className="bg-white/80 rounded-2xl p-6 flex flex-col gap-3 shadow-lg border border-white/40 hover:scale-[1.03] transition-transform">
+                {visibleProducts.map((product: Product) => (
+                  <div key={product.id} className="bg-white/80 rounded-2xl p-6 flex flex-col gap-3 shadow-lg border border-white/40 hover:scale-[1.03] transition-transform relative">
+                    {/* X button to remove product */}
+                    <button
+                      onClick={() => removeProduct(product.id)}
+                      className="absolute top-3 right-3 w-6 h-6 bg-red-500 hover:bg-red-600 text-white rounded-full flex items-center justify-center text-sm font-bold transition-colors z-10"
+                      aria-label="Remove product"
+                    >
+                      ×
+                    </button>
+                    
                     <img 
                       src={product.imageUrl} 
                       alt={product.name} 
