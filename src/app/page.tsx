@@ -23,6 +23,7 @@ export default function Home() {
   const [nextIndex, setNextIndex] = useState(2); // Index of next product to show
   const [cart, setCart] = useState<Product[]>([]);
   const [loading, setLoading] = useState(false);
+  const [lastAction, setLastAction] = useState<string>(""); // Show feedback for actions
 
   // Sync cart with localStorage
   useEffect(() => {
@@ -33,11 +34,24 @@ export default function Home() {
     localStorage.setItem("cart", JSON.stringify(cart));
   }, [cart]);
 
-  // Search for products using the API
+  // Determine if input is a search query or a command
   const handleSend = async () => {
     if (!input.trim()) return;
     
     setLoading(true);
+    
+    // If we have visible products, check if this is a command rather than a new search
+    if (visibleProducts.length > 0) {
+      const isCommand = await checkIfCommand(input);
+      if (isCommand) {
+        await handleCommand(input);
+        setLoading(false);
+        setInput("");
+        return;
+      }
+    }
+    
+    // Otherwise, treat as a search query
     try {
       const response = await fetch('/api/chat', {
         method: 'POST',
@@ -124,6 +138,116 @@ export default function Home() {
     setVisibleProducts(updatedVisible);
   };
 
+  // Check if input is a command using LLM
+  const checkIfCommand = async (text: string): Promise<boolean> => {
+    try {
+      const response = await fetch('https://litellm.rillavoice.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer sk-rilla-vibes'
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-haiku",
+          messages: [{
+            role: "user",
+            content: `Is this text a command to interact with displayed products (dismiss, remove, add to cart, select) or a new search query? 
+
+Text: "${text}"
+
+Current products visible: ${visibleProducts.map((p, i) => `${i+1}. ${p.name}`).join(', ')}
+
+Reply with just "COMMAND" or "SEARCH"`
+          }]
+        })
+      });
+      
+      const data = await response.json();
+      const result = data.choices[0].message.content.trim();
+      return result === "COMMAND";
+    } catch (error) {
+      console.error('Error checking command:', error);
+      return false; // Default to search if LLM fails
+    }
+  };
+
+  // Handle commands using LLM to parse intent
+  const handleCommand = async (text: string) => {
+    try {
+      const response = await fetch('https://litellm.rillavoice.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer sk-rilla-vibes'
+        },
+        body: JSON.stringify({
+          model: "claude-3-5-haiku",
+          messages: [{
+            role: "user",
+            content: `Parse this command and extract the action and product reference:
+
+Command: "${text}"
+
+Current products:
+${visibleProducts.map((p, i) => `${i+1}. ${p.name} (ID: ${p.id})`).join('\n')}
+
+Reply with JSON format:
+{
+  "action": "dismiss" | "add_to_cart" | "show_next",
+  "product_index": 1 | 2 | null,
+  "product_id": number | null
+}
+
+If referring to "first", "second", "1", "2" use product_index. If no specific product mentioned, use null.`
+          }]
+        })
+      });
+      
+      const data = await response.json();
+      const result = JSON.parse(data.choices[0].message.content.trim());
+      
+      // Execute the action
+      if (result.action === "dismiss" && result.product_id) {
+        const product = visibleProducts.find(p => p.id === result.product_id);
+        removeProduct(result.product_id);
+        setLastAction(`✅ Dismissed "${product?.name || 'product'}" and showed next alternative`);
+        setTimeout(() => setLastAction(""), 3000);
+      } else if (result.action === "add_to_cart" && result.product_id) {
+        const product = visibleProducts.find(p => p.id === result.product_id);
+        if (product) {
+          addToCart(product);
+          setLastAction(`✅ Added "${product.name}" to cart`);
+          setTimeout(() => setLastAction(""), 3000);
+        }
+      } else if (result.action === "show_next") {
+        // Replace both products with next ones
+        if (nextIndex < allProducts.length) {
+          const newProducts = [];
+          let currentIndex = nextIndex;
+          
+          while (newProducts.length < 2 && currentIndex < allProducts.length) {
+            const nextProduct = allProducts[currentIndex];
+            if (!dismissedIds.has(nextProduct.id)) {
+              newProducts.push(nextProduct);
+            }
+            currentIndex++;
+          }
+          
+          setVisibleProducts(newProducts);
+          setNextIndex(currentIndex);
+          setLastAction(`✅ Showing next ${newProducts.length} products`);
+          setTimeout(() => setLastAction(""), 3000);
+        } else {
+          setLastAction(`⚠️ No more products available`);
+          setTimeout(() => setLastAction(""), 3000);
+        }
+      }
+      
+    } catch (error) {
+      console.error('Error handling command:', error);
+    }
+  };
+
   return (
     <div className="min-h-screen w-full flex flex-col items-center justify-center bg-gradient-to-br from-[#0f2027] via-[#2c5364] to-[#232526] relative overflow-hidden">
       {/* Subtle texture overlay */}
@@ -138,11 +262,20 @@ export default function Home() {
       </header>
       <main className="flex-1 w-full flex flex-col items-center justify-center z-10">
         <div className="w-full max-w-2xl mx-auto flex flex-col gap-8 p-6 rounded-3xl bg-white/10 backdrop-blur-lg shadow-2xl border border-white/20 mt-8">
+          {/* Action feedback */}
+          {lastAction && (
+            <div className="bg-green-500/20 border border-green-400/30 rounded-xl p-3 text-green-200 text-center">
+              {lastAction}
+            </div>
+          )}
+          
           {/* Loading state */}
           {loading && (
             <div className="text-center py-8">
               <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
-              <p className="text-white/80">Searching for products...</p>
+              <p className="text-white/80">
+                {visibleProducts.length > 0 ? "Processing command..." : "Searching for products..."}
+              </p>
             </div>
           )}
           
@@ -213,7 +346,10 @@ export default function Home() {
             <div className="flex-1 relative">
               <input
                 className="w-full bg-white/80 border border-white/40 rounded-2xl py-4 px-5 pr-16 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-900 text-lg placeholder:text-gray-400"
-                placeholder="Search for products (e.g., 'memory cards', 'headphones')..."
+                placeholder={visibleProducts.length > 0 
+                  ? "Try: 'dismiss product 1', 'add second one to cart', 'show me different options'..." 
+                  : "Search for products (e.g., 'memory cards', 'headphones')..."
+                }
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 autoFocus
