@@ -9,12 +9,17 @@ interface Product {
   name: string;
   price: number;
   imageUrl: string;
+  asin?: string;
+  link?: string;
+  rating?: number;
+  reviews_count?: number;
 }
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [products, setProducts] = useState<Product[]>([]);
   const [cart, setCart] = useState<Product[]>([]);
+  const [loading, setLoading] = useState(false);
 
   // Sync cart with localStorage
   useEffect(() => {
@@ -25,24 +30,51 @@ export default function Home() {
     localStorage.setItem("cart", JSON.stringify(cart));
   }, [cart]);
 
-  // Simulate AI response
-  const handleSend = () => {
+  // Search for products using the API
+  const handleSend = async () => {
     if (!input.trim()) return;
-    setProducts([
-      {
-        id: 1,
-        name: "Sample Product 1",
-        price: 19.99,
-        imageUrl: "https://images.unsplash.com/photo-1513708927688-890a1e2b6b94?auto=format&fit=crop&w=400&q=80",
-      },
-      {
-        id: 2,
-        name: "Sample Product 2",
-        price: 29.99,
-        imageUrl: "https://images.unsplash.com/photo-1506744038136-46273834b3fb?auto=format&fit=crop&w=400&q=80",
-      },
-    ]);
-    setInput("");
+    
+    setLoading(true);
+    try {
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({ searchTerm: input }),
+      });
+      
+      const data = await response.json();
+      
+      if (response.ok) {
+        setProducts(data.products || []);
+      } else {
+        console.error('API Error:', data.error);
+        // Fallback to mock data on error
+        setProducts([
+          {
+            id: 1,
+            name: "Sample Product 1",
+            price: 19.99,
+            imageUrl: "https://images.unsplash.com/photo-1513708927688-890a1e2b6b94?auto=format&fit=crop&w=400&q=80",
+          }
+        ]);
+      }
+    } catch (error) {
+      console.error('Fetch error:', error);
+      // Fallback to mock data on error
+      setProducts([
+        {
+          id: 1,
+          name: "Sample Product 1",
+          price: 19.99,
+          imageUrl: "https://images.unsplash.com/photo-1513708927688-890a1e2b6b94?auto=format&fit=crop&w=400&q=80",
+        }
+      ]);
+    } finally {
+      setLoading(false);
+      setInput("");
+    }
   };
 
   const addToCart = (product: Product) => {
@@ -63,28 +95,62 @@ export default function Home() {
       </header>
       <main className="flex-1 w-full flex flex-col items-center justify-center z-10">
         <div className="w-full max-w-2xl mx-auto flex flex-col gap-8 p-6 rounded-3xl bg-white/10 backdrop-blur-lg shadow-2xl border border-white/20 mt-8">
+          {/* Loading state */}
+          {loading && (
+            <div className="text-center py-8">
+              <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-white mx-auto mb-4"></div>
+              <p className="text-white/80">Searching for products...</p>
+            </div>
+          )}
+          
           {/* Products above chat */}
-          {products.length > 0 && (
+          {products.length > 0 && !loading && (
             <div>
-              <h2 className="font-bold text-lg mb-4 text-white/90">AI Suggestions</h2>
+              <h2 className="font-bold text-lg mb-4 text-white/90">Amazon Products</h2>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
                 {products.map(product => (
                   <div key={product.id} className="bg-white/80 rounded-2xl p-6 flex flex-col gap-3 shadow-lg border border-white/40 hover:scale-[1.03] transition-transform">
-                    <img src={product.imageUrl} alt={product.name} className="w-full h-40 object-cover rounded-xl shadow mb-2" />
-                    <div className="font-semibold text-lg text-gray-900">{product.name}</div>
+                    <img 
+                      src={product.imageUrl} 
+                      alt={product.name} 
+                      className="w-full h-40 object-cover rounded-xl shadow mb-2"
+                      onError={(e) => {
+                        e.currentTarget.src = "https://images.unsplash.com/photo-1513708927688-890a1e2b6b94?auto=format&fit=crop&w=400&q=80";
+                      }}
+                    />
+                    <div className="font-semibold text-lg text-gray-900 line-clamp-2">{product.name}</div>
                     <div className="text-blue-700 text-xl font-bold">${product.price.toFixed(2)}</div>
-                    <button
-                      className="bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-full font-semibold shadow hover:from-blue-600 hover:to-purple-600 transition"
-                      onClick={() => addToCart(product)}
-                    >
-                      Add to Cart
-                    </button>
+                    {product.rating && (
+                      <div className="flex items-center gap-2 text-sm text-gray-600">
+                        <span>⭐ {product.rating}</span>
+                        {product.reviews_count && <span>({product.reviews_count} reviews)</span>}
+                      </div>
+                    )}
+                    <div className="flex gap-2 mt-2">
+                      <button
+                        className="flex-1 bg-gradient-to-r from-blue-500 to-purple-500 text-white px-4 py-2 rounded-full font-semibold shadow hover:from-blue-600 hover:to-purple-600 transition"
+                        onClick={() => addToCart(product)}
+                      >
+                        Add to Cart
+                      </button>
+                      {product.link && (
+                        <a 
+                          href={product.link} 
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                          className="bg-gray-500 text-white px-4 py-2 rounded-full font-semibold shadow hover:bg-gray-600 transition text-center"
+                        >
+                          View
+                        </a>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
             </div>
           )}
-          {/* Chat input only */}
+          
+          {/* Chat input */}
           <form
             className="flex items-end gap-3 mt-2"
             onSubmit={e => {
@@ -95,14 +161,16 @@ export default function Home() {
             <div className="flex-1 relative">
               <input
                 className="w-full bg-white/80 border border-white/40 rounded-2xl py-4 px-5 pr-16 shadow-inner focus:outline-none focus:ring-2 focus:ring-blue-400 text-gray-900 text-lg placeholder:text-gray-400"
-                placeholder="Describe what you want..."
+                placeholder="Search for products (e.g., 'memory cards', 'headphones')..."
                 value={input}
                 onChange={e => setInput(e.target.value)}
                 autoFocus
+                disabled={loading}
               />
               <button
                 type="submit"
-                className="absolute right-3 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full p-2 shadow hover:from-blue-600 hover:to-purple-600 transition"
+                disabled={loading}
+                className="absolute right-3 top-1/2 -translate-y-1/2 bg-gradient-to-r from-blue-500 to-purple-500 text-white rounded-full p-2 shadow hover:from-blue-600 hover:to-purple-600 transition disabled:opacity-50"
                 aria-label="Send"
               >
                 <svg width="24" height="24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" className="feather feather-send"><line x1="22" y1="2" x2="11" y2="13" /><polygon points="22 2 15 22 11 13 2 9 22 2" /></svg>
